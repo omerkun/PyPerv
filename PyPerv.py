@@ -113,6 +113,9 @@ def selectMangaAndChapters(sResult=None):
                 print "\n"
                 try:
                     target = mangaList[int(ans.strip()) - 1]
+                    if sResult:
+                        downloadChapter(target[0], target[0], target[1])
+                        raise SystemExit
                 except IndexError:
                     print "Can't find manga at index %s" % ans
                 except ValueError:
