@@ -37,10 +37,10 @@ class Memo:
 
     def __init__(self, func):
         self.func = func
-        self.list = None
+        self.list = []
 
     def __call__(self):
-        if self.list is not None:
+        if self.list:
             return self.list
         else:
             self.list = self.func()
@@ -91,45 +91,40 @@ def searchForManga(keyWord):
     for elm in pElms:
         resultList.append(
             (elm.text, aElms[pElms.index(elm)].attrib.get('href')))
-
     selectMangaAndChapters(resultList)
 
 
 def selectMangaAndChapters(sResult=None):
     target = None
     if not sResult:
-        manga = parseInput()
+        rawManga = parseInput()
         mangaList = getList()
     else:
-        manga = 'all'
+        rawManga = 'all'
         mangaList = sResult
 
-    if manga.lower() == 'all':
+    if rawManga.lower() == 'all':
             for manga in mangaList:
                 print "%i) %s" % (mangaList.index(manga) + 1, manga[0])
-            while 1:
-                ans = raw_input(
-                    '\nplease enter the number of the manga you want: ')
-                print "\n"
+            question = "\nPlease type the manga index: "
+            while True:
                 try:
-                    target = mangaList[int(ans.strip()) - 1]
+                    target = askSelect(question, mangaList)
+                except ValueError:
+                    print "unexcepicted value"
+                    continue
+                else:
                     if sResult:
                         downloadChapter(target[0], target[0], target[1])
                         raise SystemExit
-                except IndexError:
-                    print "Can't find manga at index %s" % ans
-                except ValueError:
-                    print "\nlet's try with the site search :)"
-                    break
-                else:
                     break
     else:
         miniList = []
         for mangaOnline in mangaList:
-            if manga.lower() == mangaOnline[0].lower():
+            if rawManga.lower() == mangaOnline[0].lower():
                 target = mangaOnline
                 break
-            elif findInStr(manga, mangaOnline[0]):
+            elif findInStr(rawManga, mangaOnline[0]):
                     miniList.append(mangaOnline)
 
     if not target:
@@ -138,17 +133,17 @@ def selectMangaAndChapters(sResult=None):
                 print '%i) %s' % (miniList.index(manga) + 1, manga[0])
             print "\nI couldn't find your manga So !"
             print "those are some kind similar"
-
-            while 1:
-                ans = raw_input('Type the index of the manga you want: ')
-                print "\n"
+            while True:
+                question = "\nPlease type the manga index: "
                 try:
-                    target = miniList[int(ans.strip()) - 1]
-                except IndexError:
-                    print "Can't find manga at index %s" % ans
+                    target = askSelect(question, miniList)
                 except ValueError:
-                    print '\nLets try with the site search :)'
-                    break
+                    question = "\nDo you want to try more tought search y\\n ? "
+                    ans = askSelect(question, ansList=['y','n'], equOpsFunction=str.lower)
+                    if ans == 'y':
+                        break
+                    else:
+                        continue
                 else:
                     break
         else:
@@ -166,19 +161,15 @@ def selectMangaAndChapters(sResult=None):
         chapterNames = tree.findall('//p[@class="mli-title"]');chapterNames.reverse()
         for chapterName in chapterNames :
             print "%i) %s" % (chapterNames.index(chapterName) + 1, chapterName.text)
-        rawList = raw_input(
-            '\nPlease type the number of chapter(s) you want separate with a space or ,: ')
-        rawList = rawList.replace(" ", ",").split(",")
-        for ch in rawList:
-            try:
-                link = chapterElements[int(ch) - 1].get('href')
+        while True:
+            question = '\nPlease type the number of chapter(s) you want separate with a space or ,: '
+            genObj = askSelect(question, chapterElements, multiChoice=True)
+            for ch in genObj:
+                link = ch.get('href')
                 name = link.split('/')[-2]
                 downloadChapter(target[0], name, link)
-            except (ValueError, IndexError):
-                print "can't find chapter at index %s" % ch
-                raise SystemExit
     else:
-        searchForManga(manga)
+        searchForManga(rawManga)
 
 #! add threads for multi chapter download
 
@@ -203,7 +194,7 @@ def downloadChapter(mangaName, name, link):
             if isEven(imgLinks.index(img)):
                 thread = ImgDownload(
                         str((imgLinks.index(img) / 2) + 1),
-                             img.split('.')[-1], img, headers, tempDir, imgPool)
+                             img.split('.')[-1], img, 3, headers, tempDir, imgPool)
                 imgPool.put(thread)
             else:
                 if (imgPool.full()) or (not imgPool.empty() and img == imgLinks[-1]):
@@ -297,7 +288,7 @@ def getSource(url, headers={}, proxy=None, maxRetrys=2, timeWait=2):
             else:
                 raise urllib2.URLError('unknown encoding !!')
                 break
-        except (urllib2.URLError, socket.timeout):
+        except (urllib2.URLError, IOError):
             if maxRetrys == 0:
                 raise urllib2.URLError("Can't connect !!")
                 break
@@ -306,7 +297,60 @@ def getSource(url, headers={}, proxy=None, maxRetrys=2, timeWait=2):
                 maxRetrys -= 1
 
     socket.setdefaulttimeout(None)
+    print respond.code
     return source
+
+def askSelect(question, itemList=None, multiChoice=False,
+                     ansList=None, excepectedType=str, equOpsFunction = None):
+    """
+    get user input and test on a list of items if args (question, itemsList).
+    get user input and test on a list of excepected answers if args (ansList,
+    excepeetdType, eqequOpsFunction=None)
+    return item from list or a genrator if the multiChoice is True.
+    """
+    if itemList:
+        while True:
+            ans = raw_input(question)
+            ans = ans.replace(" ", ",").split(',')
+            if multiChoice:
+                def genFunc(items, indices):
+                    rerun = False
+                    for index in indices:
+                        try:
+                            yield items[int(index) - 1]
+                        except (ValueError, IndexError):
+                            print "\nCan't find item at index %s." % index
+                            rerun = True
+                    if rerun:
+                        askSelect(question, itemList)
+                return genFunc(itemList, ans)
+            else:
+                try:
+                    return itemList[int(ans[0]) - 1]
+                except IndexError:
+                    print "Can't find item at index %s" % ans[0]
+                    continue
+                except:
+                    raise
+    elif ansList:
+        if not equOpsFunction:
+            equOpsFunction = excepectedType
+        while True:
+            ans = raw_input(question)
+            try:
+                for answer in ansList:
+                    if answer == equOpsFunction(excepectedType(ans)):
+                        return answer
+                else:
+                    print "didn't get this %s" % ans
+                    continue
+            except ValueError:
+                print "thats way off %s" % ans
+                continue
+            else:
+                break
+    elif ansList and itemList:
+        print 'what the heck ?'
 
 
 def cleanUp(tempDir):
@@ -357,19 +401,20 @@ class FURLopener(urllib.FancyURLopener):
     def __init__(self, headers):
         urllib.FancyURLopener.__init__(self)
         self.setheaders(headers)
+        socket.setdefaulttimeout(40)
+
+    def __del__(self):
+        socket.setdefaulttimeout(None)
 
     def setheaders(self, headers):
         self.addheaders = []
         for header in headers:
             self.addheaders.append((header, headers[header]))
 
-    def http_error_706(self, url, fp, errmsg, headers, data=None):
-        pass
-
 
 class ImgDownload(threading.Thread):
 
-    def __init__(self, name, suffix, link, headers, tempDir, queue):
+    def __init__(self, name, suffix, link, maxRetrys, headers, tempDir, queue):
         super(ImgDownload, self).__init__()
         self.name = name
         self.suffix = suffix
@@ -377,6 +422,7 @@ class ImgDownload(threading.Thread):
         self.headers = headers
         self.tempDir = tempDir
         self.queue = queue
+        self.maxRetry = maxRetrys
         self.start()
 
     def run(self):
@@ -385,8 +431,10 @@ class ImgDownload(threading.Thread):
                 FURLopener(self.headers).retrieve(
                     'http://fufufuu.net%s' % self.link, os.path.join(
                         self.tempDir, "%s.%s" % (self.name, self.suffix)))
-            except OSError:
-                pass
+            except (OSError, IOError):
+                if self.maxRetry == 0:
+                    return
+                self.maxRetry -= 1
             else:
                 self.queue.task_done()
                 return
