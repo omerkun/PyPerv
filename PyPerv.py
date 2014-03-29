@@ -28,7 +28,10 @@ else:
 
 headers = {"User-Agent": """Mozilla/5.0 (X11; L; Linux i686; en-US)
                     AppleWebKit/534.3 (KHTML, like Gecko)
-                    Chrome/6.0.472.14 Safari/534.3""", 'Accept-Encoding': 'gzip'}
+                    Chrome/6.0.472.14 Safari/534.3""", "Accept": """text/html,
+                    application/xhtml+xml,
+                    application/xml;q=0.9,*/*;q=0.8""",
+                     'Accept-Encoding': 'gzip'}
 
 # this class belongs to helper classes section
 class Memo:
@@ -62,13 +65,12 @@ def parseInput():
 @Memo
 def getList():
     try:
-        html = getSource('http://www.fufufuu.net/tanks/', headers)
+        html = getSource('http://fufufuu.net/tanks/', headers)
     except urllib2.URLError:
         print "No internet connection !"
         raise SystemExit
 
-    tree = ET.ElementTree(ET.HTML(html))
-    mangaElements = tree.findall('//li[@class="tli"]/a')
+    mangaElements = xpathSearch(html, '//li[@class="tli"]/a')
     mangalist = []
     for elem in mangaElements:
         mangalist.append((elem.getchildren()[0].text, elem.attrib.get('href')))
@@ -79,15 +81,19 @@ def searchForManga(keyWord):
     resultList = []
     mainURL = 'http://fufufuu.net/search?'
     parKwd = urllib.urlencode({'q': keyWord})
-    try:
-        page = getSource(mainURL + parKwd, headers)
-    except urllib2.URLError:
-        print 'Connection Lost !!!'
-        raise SystemExit
+    while True:
+        try:
+            page = getSource(mainURL + parKwd, headers)
+            aElms = xpathSearch(page, '//li[@class="mli"]/a')
+            pElms = xpathSearch(page, '//li[@class="mli"]/p')
+        except urllib2.URLError:
+            print 'Connection Lost !!!'
+            raise SystemExit
+        except NotFound:
+            pass
+        else:
+            break
 
-    tree = ET.ElementTree(ET.HTML(page))
-    aElms = tree.findall('//li[@class="mli"]/a')
-    pElms = tree.findall('//li[@class="mli"]/p')
     for elm in pElms:
         resultList.append(
             (elm.text, aElms[pElms.index(elm)].attrib.get('href')))
@@ -151,14 +157,18 @@ def selectMangaAndChapters(sResult=None):
 
     if target:
         link = target[1]
-        try:
-            page = getSource('http://fufufuu.net%s' % link, headers)
-        except urllib.URLopener:
-            print '\nConnection lost !!!'
-            raise SystemExit
-        tree = ET.ElementTree(ET.HTML(page))
-        chapterElements = tree.findall('//li[@class="mli"]/a');chapterElements.reverse()
-        chapterNames = tree.findall('//p[@class="mli-title"]');chapterNames.reverse()
+        while True:
+            try:
+                page = getSource('http://fufufuu.net%s' % link, headers)
+                chapterElements = xpathSearch(page, '//li[@class="mli"]/a');chapterElements.reverse()
+                chapterNames = xpathSearch(page, '//p[@class="mli-title"]');chapterNames.reverse()
+            except (urllib2.URLError):
+                print '\nConnection lost !!!'
+                raise SystemExit
+            except NotFound:
+                pass
+            else:
+                break
         for chapterName in chapterNames :
             print "%i) %s" % (chapterNames.index(chapterName) + 1, chapterName.text)
         while True:
@@ -175,18 +185,22 @@ def selectMangaAndChapters(sResult=None):
 
 
 def downloadChapter(mangaName, name, link):
-    try:
-        mainPage = getSource('http://www.fufufuu.net/%s' % link, headers)
-    except urllib2.URLError:
-        print "Connection lost !!!"
-        raise SystemExit
-
-    tree = ET.ElementTree(ET.HTML(mainPage))
     patPages = re.compile('\d{1,3}')
-    pages = int(re.search(
-        patPages, tree.find("//span[@class='text-small']").text).group())
-    patLinks = re.compile('/media/p/\w{1,3}/\w{1,3}/\w+.\w{3}')
-    imgLinks = re.findall(patLinks, tree.find('//div[@id="payload"]').text)
+    while True:
+        try:
+            mainPage = getSource('http://fufufuu.net/%s' % link, headers)
+            pages = int(re.search(
+            patPages, xpathSearch(mainPage, "//span[@class='text-small']", 'find').text).group())
+            patLinks = re.compile('/media/p/\w{1,3}/\w{1,3}/\w+.\w{3}')
+            imgLinks = re.findall(patLinks, xpathSearch(mainPage, '//div[@id="payload"]', 'find').text)
+        except urllib2.URLError:
+            print "Connection lost !!!"
+            raise SystemExit
+        except NotFound:
+            pass
+        else:
+            break
+
     tempDir = tempfile.mkdtemp()
     imgPool = Queue.Queue(2)
     try:
@@ -297,7 +311,6 @@ def getSource(url, headers={}, proxy=None, maxRetrys=2, timeWait=2):
                 maxRetrys -= 1
 
     socket.setdefaulttimeout(None)
-    print respond.code
     return source
 
 def askSelect(question, itemList=None, multiChoice=False,
@@ -351,6 +364,16 @@ def askSelect(question, itemList=None, multiChoice=False,
                 break
     elif ansList and itemList:
         print 'what the heck ?'
+
+
+def xpathSearch(html, xpathExp, method="findall"):
+    domTree = ET.ElementTree(ET.HTML(html))
+    method = getattr(domTree, method)
+    result = method(xpathExp)
+    if result is None:
+        raise NotFound("\nCan't find element(s) by this exp %s " % xpathExp)
+    else:
+        return result
 
 
 def cleanUp(tempDir):
